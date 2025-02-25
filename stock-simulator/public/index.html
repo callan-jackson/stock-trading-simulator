@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Trading Simulator</title>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <!-- Auth Section -->
+    <section id="auth-section" class="auth-container">
+        <div class="auth-logo">
+            Stock Sim
+        </div>
+        <div class="auth-form-container">
+            <!-- Login Form -->
+            <form id="login-form" class="auth-form">
+                <h2>Welcome Back</h2>
+                <div id="login-error" class="error-message"></div>
+                <input type="text" id="login-username" placeholder="Username" required>
+                <input type="password" id="login-password" placeholder="Password" required>
+                <button type="submit">Login</button>
+                <p>Don't have an account? <a href="#" id="show-register">Register</a></p>
+            </form>
+
+            <!-- Register Form -->
+            <form id="register-form" class="auth-form" style="display: none;">
+                <h2>Create Account</h2>
+                <div id="register-error" class="error-message"></div>
+                <input type="text" id="register-username" placeholder="Username" required>
+                <input type="email" id="register-email" placeholder="Email" required>
+                <input type="password" id="register-password" placeholder="Password" required>
+                <button type="submit">Register</button>
+                <p>Already have an account? <a href="#" id="show-login">Login</a></p>
+            </form>
+        </div>
+    </section>
+
+    <!-- Main App Content -->
+    <div id="main-content" style="display: none;">
+        <div class="sidebar">
+            <div class="logo">Stock Sim</div>
+            <div id="user-welcome" class="user-welcome"></div>
+            <nav>
+                <a href="#" class="active"><i class="fas fa-home"></i> Home</a>
+                <a href="#"><i class="fas fa-chart-line"></i> Market</a>
+                <a href="#"><i class="fas fa-wallet"></i> Portfolio</a>
+                <a href="#"><i class="fas fa-history"></i> History</a>
+                <a href="#" id="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</a>
+            </nav>
+        </div>
+
+        <div class="main-content">
+            <div class="header">
+                <div class="account-info">
+                    <div class="cash-balance">
+                        <i class="fas fa-wallet"></i>
+                        <div class="cash-details">
+                            <div class="cash-label">Available Cash</div>
+                            <div class="cash-amount">$<span id="cashBalance">0</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="metrics">
+                <div class="metric-card">
+                    <h3>Total Value</h3>
+                    <div class="value" id="totalValue">$0</div>
+                </div>
+                <div class="metric-card">
+                    <h3>Profit/Loss</h3>
+                    <div class="value" id="profitLoss">$0</div>
+                </div>
+            </div>
+
+            <div class="content-grid">
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <h2><span id="currentSymbol">AAPL</span> Stock Prices</h2>
+                        <div class="chart-controls">
+                            <select id="timeRange">
+                                <option value="1d">1 Day</option>
+                                <option value="5d">5 Days</option>
+                                <option value="1mo">1 Month</option>
+                                <option value="3mo">3 Months</option>
+                                <option value="6mo" selected>6 Months</option>
+                                <option value="1y">1 Year</option>
+                            </select>
+                            <div class="indicator-toggles">
+                                <label><input type="checkbox" id="sma20" checked> SMA 20</label>
+                                <label><input type="checkbox" id="sma50" checked> SMA 50</label>
+                                <label><input type="checkbox" id="volume" checked> Volume</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="stockChart"></div>
+                    <div id="chartLegend" class="chart-legend"></div>
+                </div>
+
+                <div class="trade-section">
+                    <div class="stock-search-container">
+                        <input type="text" id="stockSearch" class="stock-search-input" placeholder="Search stocks...">
+                        <div id="searchResults" class="search-results"></div>
+                    </div>
+
+                    <div class="trade-box">
+                        <h3>Trade Stocks</h3>
+                        <input type="text" id="symbol" placeholder="Symbol (e.g., AAPL)" required>
+                        <input type="number" id="quantity" placeholder="Quantity" required min="1">
+                        <div class="current-price">
+                            Current Price: $<span id="currentPrice">0.00</span>
+                        </div>
+                        <div class="total-cost">
+                            Total Cost: $<span id="totalCost">0.00</span>
+                        </div>
+                        <div class="button-group">
+                            <button id="buyBtn" class="buy-btn">Buy</button>
+                            <button id="sellBtn" class="sell-btn">Sell</button>
+                        </div>
+                    </div>
+
+                    <div class="portfolio-list">
+                        <h3>Your Holdings</h3>
+                        <div id="portfolioList"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="transaction-history">
+                <h3>Recent Transactions</h3>
+                <div class="transaction-list">
+                    <div class="transaction-item transaction-header">
+                        <div>Date</div>
+                        <div>Symbol</div>
+                        <div>Type</div>
+                        <div>Quantity</div>
+                        <div>Price</div>
+                    </div>
+                    <div id="transactionHistory">
+                        <!-- Transaction items will be populated here by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/js/auth.js"></script>
+    <script src="/js/charts.js"></script>
+    <script src="/js/portfolio.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>
