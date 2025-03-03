@@ -1,3 +1,14 @@
+/**
+ * Portfolio Management Routes
+ * 
+ * Handles all portfolio-related API endpoints including:
+ * - Portfolio summary and holdings
+ * - Trade execution (buy/sell)
+ * - Transaction history
+ * 
+ * All routes in this module require authentication.
+ */
+
 const express = require('express');
 const router = express.Router();
 const sqlite3 = require('sqlite3').verbose();
@@ -5,7 +16,13 @@ const yahooFinance = require('yahoo-finance2').default;
 const config = require('../config');
 const db = new sqlite3.Database(config.dbPath);
 
-// Get user's portfolio summary
+/**
+ * Get user's portfolio summary
+ * GET /api/portfolio/summary
+ * 
+ * Returns user's cash balance, total portfolio value, holdings,
+ * and overall profit/loss.
+ */
 router.get('/summary', async (req, res) => {
     try {
         const userId = req.user.id;
@@ -38,7 +55,7 @@ router.get('/summary', async (req, res) => {
                 }
             }
 
-            // Get user's portfolio
+            // Get user's portfolio holdings
             db.all(
                 'SELECT symbol, quantity, average_cost FROM portfolio WHERE user_id = ? AND quantity > 0',
                 [userId],
@@ -51,13 +68,15 @@ router.get('/summary', async (req, res) => {
                     let totalValue = balanceRow.balance;
                     const holdings = [];
 
-                    // Calculate current value of each holding
+                    // Calculate current value of each holding using real-time pricing
                     for (const stock of portfolio) {
                         try {
+                            // Fetch current stock price from Yahoo Finance
                             const quote = await yahooFinance.quote(stock.symbol);
                             const currentPrice = quote.regularMarketPrice;
                             const value = currentPrice * stock.quantity;
                             
+                            // Add to holdings array with calculated metrics
                             holdings.push({
                                 symbol: stock.symbol,
                                 quantity: stock.quantity,
@@ -67,12 +86,14 @@ router.get('/summary', async (req, res) => {
                                 profit: value - (stock.average_cost * stock.quantity)
                             });
 
+                            // Add to total portfolio value
                             totalValue += value;
                         } catch (error) {
                             console.error(`Error fetching quote for ${stock.symbol}:`, error);
                         }
                     }
 
+                    // Return complete portfolio summary
                     res.json({
                         cash: balanceRow.balance,
                         totalValue,
@@ -88,24 +109,32 @@ router.get('/summary', async (req, res) => {
     }
 });
 
-// Execute trade
+/**
+ * Execute a stock trade (buy or sell)
+ * POST /api/portfolio/trade
+ * 
+ * Processes buy/sell orders and updates portfolio and cash balance.
+ */
 router.post('/trade', async (req, res) => {
     const { symbol, quantity, type } = req.body;
     const userId = req.user.id;
 
+    // Validate input parameters
     if (!symbol || !quantity || !['buy', 'sell'].includes(type)) {
         return res.status(400).json({ error: 'Invalid trade parameters' });
     }
 
     try {
+        // Get current stock price
         const quote = await yahooFinance.quote(symbol);
         const currentPrice = quote.regularMarketPrice;
         const totalCost = currentPrice * quantity;
 
+        // Use a transaction to ensure data consistency
         db.serialize(() => {
             db.run('BEGIN TRANSACTION');
 
-            // Check user's balance for buy orders
+            // Handle buy orders
             if (type === 'buy') {
                 db.get('SELECT balance FROM user_balance WHERE user_id = ?', [userId], (err, row) => {
                     if (err) {
@@ -119,12 +148,13 @@ router.post('/trade', async (req, res) => {
                         return res.status(400).json({ error: 'User balance not found' });
                     }
 
+                    // Check if user has enough cash
                     if (row.balance < totalCost) {
                         db.run('ROLLBACK');
                         return res.status(400).json({ error: 'Insufficient funds' });
                     }
 
-                    // Update user's balance
+                    // Update user's balance (subtract cost)
                     db.run(
                         'UPDATE user_balance SET balance = balance - ? WHERE user_id = ?',
                         [totalCost, userId],
@@ -135,7 +165,7 @@ router.post('/trade', async (req, res) => {
                                 return res.status(500).json({ error: 'Transaction failed' });
                             }
 
-                            // Update portfolio
+                            // Update portfolio with new shares
                             updatePortfolio(userId, symbol, quantity, currentPrice, type, (err) => {
                                 if (err) {
                                     db.run('ROLLBACK');
@@ -161,12 +191,13 @@ router.post('/trade', async (req, res) => {
                             return res.status(500).json({ error: 'Database error' });
                         }
 
+                        // Check if user owns enough shares
                         if (!row || row.quantity < quantity) {
                             db.run('ROLLBACK');
                             return res.status(400).json({ error: 'Insufficient shares' });
                         }
 
-                        // Update user's balance
+                        // Update user's balance (add proceeds)
                         db.run(
                             'UPDATE user_balance SET balance = balance + ? WHERE user_id = ?',
                             [totalCost, userId],
@@ -200,7 +231,12 @@ router.post('/trade', async (req, res) => {
     }
 });
 
-// Get transaction history - IMPROVED VERSION
+/**
+ * Get transaction history
+ * GET /api/portfolio/transactions
+ * 
+ * Returns user's trading history with security measures.
+ */
 router.get('/transactions', (req, res) => {
     // Make sure we have a valid user ID from the authenticated user
     const userId = req.user.id;
@@ -212,7 +248,7 @@ router.get('/transactions', (req, res) => {
     
     console.log(`Fetching transactions for user ID: ${userId}`);
     
-    // Use parameterized query with explicit user ID check
+    // Use parameterized query with explicit user ID check for security
     db.all(
         `SELECT id, symbol, quantity, price, type, date FROM transactions 
          WHERE user_id = ? 
@@ -242,7 +278,17 @@ router.get('/transactions', (req, res) => {
     );
 });
 
-// Helper function to update portfolio
+/**
+ * Helper function to update portfolio
+ * Handles portfolio entry creation/updating and adjusts average cost
+ * 
+ * @param {number} userId - User ID
+ * @param {string} symbol - Stock symbol
+ * @param {number} quantity - Quantity to add (positive) or remove (negative)
+ * @param {number} price - Current price per share
+ * @param {string} type - Trade type ('buy' or 'sell')
+ * @param {Function} callback - Callback function
+ */
 function updatePortfolio(userId, symbol, quantity, price, type, callback) {
     db.run(
         `INSERT INTO portfolio (user_id, symbol, quantity, average_cost)
@@ -261,13 +307,23 @@ function updatePortfolio(userId, symbol, quantity, price, type, callback) {
                 return callback(err);
             }
 
-            // Record transaction - call improved version
+            // Record transaction
             recordTransaction(userId, symbol, Math.abs(quantity), price, type, callback);
         }
     );
 }
 
-// Helper function to record transaction - IMPROVED VERSION
+/**
+ * Helper function to record transaction
+ * Creates an entry in the transactions table
+ * 
+ * @param {number} userId - User ID
+ * @param {string} symbol - Stock symbol
+ * @param {number} quantity - Transaction quantity
+ * @param {number} price - Price per share
+ * @param {string} type - Transaction type ('buy' or 'sell')
+ * @param {Function} callback - Callback function
+ */
 function recordTransaction(userId, symbol, quantity, price, type, callback) {
     // Extra validation to ensure we have a valid user ID
     if (!userId) {
