@@ -1,82 +1,130 @@
-// Main application initialization
+/**
+ * Main Application Controller
+ * 
+ * This script handles initialization, navigation, and shared functionality
+ * across the application. It orchestrates the interaction between different
+ * modules and maintains application state.
+ */
+
+// Initialize the application when DOM is fully loaded
 document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
 });
 
+/**
+ * Main application initialization function
+ * Sets up navigation, checks authentication, and starts data refresh
+ */
 async function initializeApp() {
-    // Setup navigation
+    // Setup navigation handlers
     setupNavigation();
     
-    // Check auth status first
+    // Check authentication status before proceeding
     await checkAuthStatus();
     
-    // Setup trade buttons
-    const buyBtn = document.getElementById('buyBtn');
-    const sellBtn = document.getElementById('sellBtn');
-    
-    if (buyBtn) buyBtn.addEventListener('click', () => executeTrade('buy'));
-    if (sellBtn) sellBtn.addEventListener('click', () => executeTrade('sell'));
-    
-    // Setup quantity input to calculate total cost
-    const quantityInput = document.getElementById('quantity');
-    if (quantityInput) {
-        quantityInput.addEventListener('input', updateTotalCost);
-    }
-    
-    // Start auto-refresh for data
+    // Start automatic data refresh for all sections
     startDataRefresh();
 }
 
+/**
+ * Set up navigation event handlers
+ * Handles tab switching and URL hash-based routing
+ */
 function setupNavigation() {
     const navLinks = document.querySelectorAll('nav a');
     navLinks.forEach(link => {
+        // Skip logout button as it has special handling
+        if (link.id === 'logout-btn') return;
+        
         link.addEventListener('click', (e) => {
             e.preventDefault();
+            
+            // Update active navigation state
             navLinks.forEach(l => l.classList.remove('active'));
             link.classList.add('active');
             
-            // Handle navigation
-            const section = link.getAttribute('href').substring(1);
-            handleNavigation(section);
+            // Extract section ID from href attribute (removing the # symbol)
+            const sectionId = link.getAttribute('href').substring(1);
+            handleNavigation(sectionId);
         });
     });
+    
+    // Check if URL already has a hash and navigate to that section
+    if (window.location.hash) {
+        const sectionId = window.location.hash.substring(1);
+        const navLink = document.querySelector(`nav a[href="#${sectionId}"]`);
+        if (navLink) {
+            navLinks.forEach(l => l.classList.remove('active'));
+            navLink.classList.add('active');
+            handleNavigation(sectionId);
+        }
+    } else {
+        // Default to home section if no hash is present
+        handleNavigation('home');
+    }
 }
 
+/**
+ * Navigate to a specific section/page of the application
+ * @param {string} section - The ID of the section to display
+ */
 function handleNavigation(section) {
-    // Hide all main content sections
-    const sections = ['home', 'market', 'portfolio', 'history'];
+    // Hide all content sections
+    const sections = document.querySelectorAll('.content-section');
     sections.forEach(s => {
-        const element = document.getElementById(`${s}-section`);
-        if (element) {
-            element.style.display = 'none';
-        }
+        s.style.display = 'none';
     });
     
     // Show selected section
     const selectedSection = document.getElementById(`${section}-section`);
     if (selectedSection) {
         selectedSection.style.display = 'block';
+        
+        // Update URL hash for bookmarking and back-button support
+        window.location.hash = section;
+        
+        // Update content based on section
+        updateSectionContent(section);
     }
-    
-    // Update data based on section
+}
+
+/**
+ * Update content for a specific section
+ * Calls the appropriate initialization function for each section
+ * @param {string} section - The ID of the section to update
+ */
+function updateSectionContent(section) {
     switch(section) {
         case 'home':
-            updateChartData();
-            updatePortfolioView();
+            updateHomeData();
             break;
         case 'market':
-            // Additional market data updates
+            // Check if the function exists before calling
+            if (typeof initializeMarketPage === 'function') {
+                initializeMarketPage();
+            }
             break;
         case 'portfolio':
-            updatePortfolioView();
+            if (typeof initializePortfolio === 'function') {
+                initializePortfolio();
+            } else {
+                // Fallback to basic portfolio update if full init isn't available
+                updatePortfolioView();
+            }
             break;
         case 'history':
-            updateTransactionHistory();
+            if (typeof initializeHistoryPage === 'function') {
+                initializeHistoryPage();
+            }
             break;
     }
 }
 
-// Handle auth state changes
+/**
+ * Handle authentication state changes
+ * Updates UI based on whether user is authenticated
+ * @param {boolean} isAuthenticated - Whether the user is logged in
+ */
 async function handleAuthStateChange(isAuthenticated) {
     const authSection = document.getElementById('auth-section');
     const mainContent = document.getElementById('main-content');
@@ -84,69 +132,114 @@ async function handleAuthStateChange(isAuthenticated) {
     if (authSection && mainContent) {
         if (isAuthenticated) {
             try {
-                // Clear any existing transaction history
+                // Clear any existing transaction history for security
                 const transactionHistory = document.getElementById('transactionHistory');
                 if (transactionHistory) {
                     transactionHistory.innerHTML = '';
                 }
                 
-                // Fetch portfolio summary immediately after auth
+                // Fetch portfolio summary immediately after authentication
                 const response = await fetch('/api/portfolio/summary', {
-                    credentials: 'include'
+                    credentials: 'include' // Include cookies for authentication
                 });
                 
                 if (response.ok) {
                     const data = await response.json();
                     
-                    // Update UI with balance
-                    const cashBalance = document.getElementById('cashBalance');
-                    const totalValue = document.getElementById('totalValue');
-                    const profitLoss = document.getElementById('profitLoss');
-
-                    if (cashBalance) cashBalance.textContent = data.cash.toFixed(2);
-                    if (totalValue) totalValue.textContent = `$${data.totalValue.toFixed(2)}`;
-                    if (profitLoss) profitLoss.textContent = `$${data.profit.toFixed(2)}`;
+                    // Update UI with user's balance information
+                    updateBalanceDisplay(data);
                 }
                 
-                // Show main content
+                // Show main application content
                 authSection.style.display = 'none';
                 mainContent.style.display = 'flex';
                 
-                // Initialize other components
-                initializeChart();
-                updatePortfolioView();
-                // Fetch fresh transaction data for this user
-                updateTransactionHistory();
+                // Check if URL has a hash and navigate to that section
+                const sectionId = window.location.hash ? window.location.hash.substring(1) : 'home';
+                handleNavigation(sectionId);
+                
+                // Check if user is newly registered to launch tutorial
+                const isNewlyRegistered = sessionStorage.getItem('newlyRegistered') === 'true';
+                if (isNewlyRegistered && typeof window.startTutorial === 'function') {
+                    // Tutorial will auto-start via the tutorial.js initialization
+                    console.log('New user detected, tutorial will start automatically');
+                }
+                
             } catch (error) {
                 console.error('Error fetching portfolio data:', error);
                 showError('Failed to load portfolio data');
             }
         } else {
+            // Show authentication forms when not authenticated
             authSection.style.display = 'flex';
             mainContent.style.display = 'none';
         }
     }
 }
 
-// Start auto-refresh for data
-function startDataRefresh() {
-    // Update chart data every minute
-    setInterval(() => {
-        const chart = document.getElementById('stockChart');
-        if (chart && chart.style.display !== 'none') {
-            updateChartData();
-        }
-    }, 60000);
+/**
+ * Update balance display across all sections
+ * @param {Object} data - Portfolio data containing cash, totalValue, and profit
+ */
+function updateBalanceDisplay(data) {
+    const cashBalance = document.getElementById('cashBalance');
+    const totalValue = document.getElementById('totalValue');
+    const profitLoss = document.getElementById('profitLoss');
+    const homeTotalValue = document.getElementById('homeTotalValue');
+    const homeProfitLoss = document.getElementById('homeProfitLoss');
+
+    // Update cash balance
+    if (cashBalance) cashBalance.textContent = data.cash.toFixed(2);
     
-    // Update portfolio data every 30 seconds
-    setInterval(() => {
-        if (document.getElementById('main-content').style.display !== 'none') {
-            updatePortfolioView();
-        }
-    }, 30000);
+    // Update portfolio page metrics
+    if (totalValue) totalValue.textContent = `$${data.totalValue.toFixed(2)}`;
+    if (profitLoss) {
+        profitLoss.textContent = `$${data.profit.toFixed(2)}`;
+        profitLoss.className = 'value ' + (data.profit >= 0 ? 'positive' : 'negative');
+    }
+    
+    // Update home page metrics
+    if (homeTotalValue) homeTotalValue.textContent = `$${data.totalValue.toFixed(2)}`;
+    if (homeProfitLoss) {
+        homeProfitLoss.textContent = `$${data.profit.toFixed(2)}`;
+        homeProfitLoss.className = 'value ' + (data.profit >= 0 ? 'positive' : 'negative');
+    }
 }
 
-// Update portfolio view
+/**
+ * Update home section data from the API
+ */
+async function updateHomeData() {
+    try {
+        const response = await fetch('/api/portfolio/summary', {
+            credentials: 'include'
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            updateBalanceDisplay(data);
+        }
+    } catch (error) {
+        console.error('Error updating home data:', error);
+    }
+}
+
+/**
+ * Start automatic data refresh for active section
+ * Refreshes data every minute based on which section is active
+ */
+function startDataRefresh() {
+    // Update data every minute based on active section
+    setInterval(() => {
+        const activeSection = window.location.hash.substring(1) || 'home';
+        updateSectionContent(activeSection);
+    }, 60000); // 60000ms = 1 minute
+}
+
+/**
+ * Update portfolio view with current data
+ * Fetches latest portfolio data and updates UI elements
+ */
 async function updatePortfolioView() {
     try {
         const response = await fetch('/api/portfolio/summary', {
@@ -159,39 +252,37 @@ async function updatePortfolioView() {
         
         const data = await response.json();
         
-        // Update cash balance
-        document.getElementById('cashBalance').textContent = data.cash.toFixed(2);
+        // Update balance display across all sections
+        updateBalanceDisplay(data);
         
-        // Update total value
-        document.getElementById('totalValue').textContent = `$${data.totalValue.toFixed(2)}`;
+        // Update portfolioCashBalance in portfolio section
+        const portfolioCashBalance = document.getElementById('portfolioCashBalance');
+        if (portfolioCashBalance) {
+            portfolioCashBalance.textContent = data.cash.toFixed(2);
+        }
         
-        // Update profit/loss
-        const profitLossElement = document.getElementById('profitLoss');
-        const profit = data.profit;
-        profitLossElement.textContent = `$${profit.toFixed(2)}`;
-        profitLossElement.className = 'value ' + (profit >= 0 ? 'positive' : 'negative');
-        
-        // Update portfolio list
+        // Update portfolio list with current holdings
         const portfolioList = document.getElementById('portfolioList');
         if (portfolioList) {
             if (data.holdings.length === 0) {
                 portfolioList.innerHTML = '<div class="empty-portfolio">No holdings yet. Start trading!</div>';
             } else {
+                // Generate HTML for each holding
                 portfolioList.innerHTML = data.holdings.map(holding => `
-                    <div class="portfolio-item" onclick="selectStock('${holding.symbol}')">
+                    <div class="portfolio-item" onclick="viewStockInMarket('${holding.symbol}')">
                         <div class="stock-info">
                             <h4>${holding.symbol}</h4>
                             <div>${holding.quantity} shares</div>
                         </div>
                         <div class="stock-values">
                             <div>
-                                <div>Current: $${holding.currentPrice.toFixed(2)}</div>
-                                <div>Avg: $${holding.averageCost.toFixed(2)}</div>
+                                <div>Current: ${holding.currentPrice.toFixed(2)}</div>
+                                <div>Avg: ${holding.averageCost.toFixed(2)}</div>
                             </div>
                             <div>
-                                <div>Value: $${holding.totalValue.toFixed(2)}</div>
+                                <div>Value: ${holding.totalValue.toFixed(2)}</div>
                                 <div class="${holding.profit >= 0 ? 'positive' : 'negative'}">
-                                    ${holding.profit >= 0 ? '+' : ''}$${holding.profit.toFixed(2)}
+                                    ${holding.profit >= 0 ? '+' : ''}${holding.profit.toFixed(2)}
                                 </div>
                             </div>
                         </div>
@@ -199,19 +290,27 @@ async function updatePortfolioView() {
                 `).join('');
             }
         }
+        
+        // Check if we need to create/update the pie chart
+        if (typeof createPortfolioPieChart === 'function') {
+            createPortfolioPieChart(data.holdings);
+        }
+        
+        // Update transaction history in portfolio section
+        updateTransactionHistory();
     } catch (error) {
         console.error('Portfolio update failed:', error);
     }
 }
 
-// Update transaction history
+/**
+ * Update transaction history display
+ * Fetches recent transactions and updates the UI
+ */
 async function updateTransactionHistory() {
     try {
-        console.log('Updating transaction history for current user...');
-        
         const response = await fetch('/api/portfolio/transactions', {
             credentials: 'include',
-            // Add cache-busting query parameter
             headers: {
                 'Cache-Control': 'no-cache',
                 'Pragma': 'no-cache'
@@ -223,18 +322,18 @@ async function updateTransactionHistory() {
         }
         
         const transactions = await response.json();
-        console.log(`Received ${transactions.length} transactions for current user`);
         
-        // Update transaction list
+        // Update transaction list in portfolio section
         const transactionHistory = document.getElementById('transactionHistory');
         if (transactionHistory) {
-            // Clear existing transactions first
             transactionHistory.innerHTML = '';
             
             if (transactions.length === 0) {
                 transactionHistory.innerHTML = '<div class="empty-transactions">No transactions yet.</div>';
             } else {
-                transactionHistory.innerHTML = transactions.map(transaction => `
+                // Show the most recent 10 transactions
+                const recentTransactions = transactions.slice(0, 10);
+                transactionHistory.innerHTML = recentTransactions.map(transaction => `
                     <div class="transaction-item">
                         <div>${new Date(transaction.date).toLocaleString()}</div>
                         <div>${transaction.symbol}</div>
@@ -252,62 +351,11 @@ async function updateTransactionHistory() {
     }
 }
 
-// Execute trade
-async function executeTrade(type) {
-    const symbol = document.getElementById('symbol').value;
-    const quantity = parseInt(document.getElementById('quantity').value);
-    
-    if (!symbol || isNaN(quantity) || quantity <= 0) {
-        showError('Please enter a valid symbol and quantity');
-        return;
-    }
-    
-    try {
-        const response = await fetch('/api/portfolio/trade', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ symbol, quantity, type }),
-            credentials: 'include'
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok) {
-            showSuccess(`Successfully ${type === 'buy' ? 'bought' : 'sold'} ${quantity} shares of ${symbol}`);
-            updatePortfolioView();
-            updateTransactionHistory();
-            
-            // Clear form
-            document.getElementById('quantity').value = '';
-            updateTotalCost();
-        } else {
-            showError(data.error || 'Trade failed');
-        }
-    } catch (error) {
-        console.error('Trade execution failed:', error);
-        showError('Trade execution failed');
-    }
-}
-
-// Update total cost when quantity changes
-function updateTotalCost() {
-    const quantityInput = document.getElementById('quantity');
-    const currentPriceElement = document.getElementById('currentPrice');
-    const totalCostElement = document.getElementById('totalCost');
-    
-    if (quantityInput && currentPriceElement && totalCostElement) {
-        const quantity = parseInt(quantityInput.value) || 0;
-        // Remove the dollar sign from the price before parsing
-        const currentPrice = parseFloat(currentPriceElement.textContent.replace('$', '')) || 0;
-        const totalCost = (quantity * currentPrice).toFixed(2);
-        
-        totalCostElement.textContent = totalCost;
-    }
-}
-
-// Error handling
+/**
+ * Display an error message to the user
+ * Creates a temporary notification that fades after 5 seconds
+ * @param {string} message - The error message to display
+ */
 function showError(message) {
     const errorDiv = document.createElement('div');
     errorDiv.className = 'error-message';
@@ -315,12 +363,17 @@ function showError(message) {
     
     document.body.appendChild(errorDiv);
     
+    // Auto-remove after 5 seconds
     setTimeout(() => {
         errorDiv.remove();
     }, 5000);
 }
 
-// Success message
+/**
+ * Display a success message to the user
+ * Creates a temporary notification that fades after 3 seconds
+ * @param {string} message - The success message to display
+ */
 function showSuccess(message) {
     const successDiv = document.createElement('div');
     successDiv.className = 'success-message';
@@ -328,6 +381,7 @@ function showSuccess(message) {
     
     document.body.appendChild(successDiv);
     
+    // Auto-remove after 3 seconds
     setTimeout(() => {
         successDiv.remove();
     }, 3000);
