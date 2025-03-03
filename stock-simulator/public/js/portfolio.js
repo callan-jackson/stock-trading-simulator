@@ -1,257 +1,242 @@
-const express = require('express');
-const router = express.Router();
-const sqlite3 = require('sqlite3').verbose();
-const yahooFinance = require('yahoo-finance2').default;
-const config = require('../config');
-const db = new sqlite3.Database(config.dbPath);
+/**
+ * Portfolio Management Module
+ * 
+ * Handles user portfolio display, visualization, and interaction.
+ * This module provides a comprehensive view of the user's current holdings,
+ * including valuation, profit/loss calculations, and visual representations.
+ */
 
-// Get user's portfolio summary
-router.get('/summary', async (req, res) => {
+// Module state
+let portfolioData = null;     // Cached portfolio data
+let portfolioPieChart = null; // Chart instance for portfolio visualization
+
+/**
+ * Initialize portfolio functionality
+ * Called when the portfolio section is first loaded or activated
+ */
+function initializePortfolio() {
+    // Load initial portfolio data
+    updatePortfolioView();
+}
+
+/**
+ * Update portfolio view with latest data
+ * Fetches current portfolio data and updates UI components
+ */
+async function updatePortfolioView() {
     try {
-        const userId = req.user.id;
+        // Fetch portfolio summary from API
+        const response = await fetch('/api/portfolio/summary', {
+            credentials: 'include' // Include auth credentials
+        });
         
-        // Get user's cash balance
-        db.get('SELECT balance FROM user_balance WHERE user_id = ?', [userId], async (err, balanceRow) => {
-            if (err) {
-                return res.status(500).json({ error: 'Database error' });
-            }
-
-            // If no balance row exists, create one
-            if (!balanceRow) {
-                await new Promise((resolve, reject) => {
-                    db.run('INSERT INTO user_balance (user_id, balance) VALUES (?, ?)',
-                        [userId, config.initialBalance],
-                        (err) => {
-                            if (err) reject(err);
-                            else resolve();
-                        });
-                });
-                balanceRow = { balance: config.initialBalance };
-            }
-
-            // Get user's portfolio
-            db.all(
-                'SELECT symbol, quantity, average_cost FROM portfolio WHERE user_id = ? AND quantity > 0',
-                [userId],
-                async (err, portfolio) => {
-                    if (err) {
-                        return res.status(500).json({ error: 'Database error' });
-                    }
-
-                    let totalValue = balanceRow.balance;
-                    const holdings = [];
-
-                    // Calculate current value of each holding
-                    for (const stock of portfolio) {
-                        try {
-                            const quote = await yahooFinance.quote(stock.symbol);
-                            const currentPrice = quote.regularMarketPrice;
-                            const value = currentPrice * stock.quantity;
-                            
-                            holdings.push({
-                                symbol: stock.symbol,
-                                quantity: stock.quantity,
-                                averageCost: stock.average_cost,
-                                currentPrice: currentPrice,
-                                totalValue: value,
-                                profit: value - (stock.average_cost * stock.quantity)
-                            });
-
-                            totalValue += value;
-                        } catch (error) {
-                            console.error(`Error fetching quote for ${stock.symbol}:`, error);
-                        }
-                    }
-
-                    res.json({
-                        cash: balanceRow.balance,
-                        totalValue,
-                        holdings,
-                        profit: totalValue - config.initialBalance
-                    });
-                }
-            );
-        });
+        if (!response.ok) {
+            throw new Error('Failed to fetch portfolio data');
+        }
+        
+        // Parse and cache data
+        const data = await response.json();
+        portfolioData = data;
+        
+        // Update cash balance display in portfolio section
+        const portfolioCashBalance = document.getElementById('portfolioCashBalance');
+        if (portfolioCashBalance) {
+            portfolioCashBalance.textContent = data.cash.toFixed(2);
+        }
+        
+        // Update overall balance display across all sections
+        updateBalanceDisplay(data);
+        
+        // Update portfolio holdings list
+        updatePortfolioList(data.holdings);
+        
+        // Create or update portfolio pie chart
+        createPortfolioPieChart(data.holdings);
+        
+        // Update recent transaction history
+        updateTransactionHistory();
     } catch (error) {
-        res.status(500).json({ error: 'Server error' });
+        console.error('Portfolio update failed:', error);
     }
-});
+}
 
-// Execute trade
-router.post('/trade', async (req, res) => {
-    const { symbol, quantity, type } = req.body;
-    const userId = req.user.id;
-
-    if (!symbol || !quantity || !['buy', 'sell'].includes(type)) {
-        return res.status(400).json({ error: 'Invalid trade parameters' });
-    }
-
-    try {
-        const quote = await yahooFinance.quote(symbol);
-        const currentPrice = quote.regularMarketPrice;
-        const totalCost = currentPrice * quantity;
-
-        db.serialize(() => {
-            db.run('BEGIN TRANSACTION');
-
-            if (type === 'buy') {
-                // Check user's balance
-                db.get('SELECT balance FROM user_balance WHERE user_id = ?', [userId], (err, row) => {
-                    if (err || !row) {
-                        db.run('ROLLBACK');
-                        return res.status(400).json({ error: 'Could not verify balance' });
-                    }
-
-                    if (row.balance < totalCost) {
-                        db.run('ROLLBACK');
-                        return res.status(400).json({ error: 'Insufficient funds' });
-                    }
-
-                    // Update balance
-                    db.run(
-                        'UPDATE user_balance SET balance = balance - ? WHERE user_id = ?',
-                        [totalCost, userId],
-                        (err) => {
-                            if (err) {
-                                db.run('ROLLBACK');
-                                return res.status(500).json({ error: 'Failed to update balance' });
-                            }
-
-                            // Update portfolio
-                            updatePortfolio(userId, symbol, quantity, currentPrice, type, (err) => {
-                                if (err) {
-                                    db.run('ROLLBACK');
-                                    return res.status(500).json({ error: 'Failed to update portfolio' });
-                                }
-
-                                db.run('COMMIT');
-                                res.json({ success: true });
-                            });
-                        }
-                    );
-                });
-            } else { // Sell
-                // Verify holding
-                db.get(
-                    'SELECT quantity FROM portfolio WHERE user_id = ? AND symbol = ?',
-                    [userId, symbol],
-                    (err, row) => {
-                        if (err) {
-                            db.run('ROLLBACK');
-                            return res.status(500).json({ error: 'Database error' });
-                        }
-
-                        if (!row || row.quantity < quantity) {
-                            db.run('ROLLBACK');
-                            return res.status(400).json({ error: 'Insufficient shares' });
-                        }
-
-                        // Update balance
-                        db.run(
-                            'UPDATE user_balance SET balance = balance + ? WHERE user_id = ?',
-                            [totalCost, userId],
-                            (err) => {
-                                if (err) {
-                                    db.run('ROLLBACK');
-                                    return res.status(500).json({ error: 'Failed to update balance' });
-                                }
-
-                                // Update portfolio with negative quantity for sells
-                                updatePortfolio(userId, symbol, -quantity, currentPrice, type, (err) => {
-                                    if (err) {
-                                        db.run('ROLLBACK');
-                                        return res.status(500).json({ error: 'Failed to update portfolio' });
-                                    }
-
-                                    db.run('COMMIT');
-                                    res.json({ success: true });
-                                });
-                            }
-                        );
-                    }
-                );
-            }
-        });
-    } catch (error) {
-        console.error('Trade execution error:', error);
-        res.status(500).json({ error: 'Failed to execute trade' });
-    }
-});
-
-// Get transaction history
-router.get('/transactions', (req, res) => {
-    const userId = req.user.id;
+/**
+ * Update the portfolio list display
+ * Renders list of current stock holdings with details
+ * @param {Array} holdings - Array of stock holdings data
+ */
+function updatePortfolioList(holdings) {
+    const portfolioList = document.getElementById('portfolioList');
+    if (!portfolioList) return;
     
-    db.all(
-        `SELECT * FROM transactions 
-         WHERE user_id = ? 
-         ORDER BY date DESC 
-         LIMIT 50`,
-        [userId],
-        (err, transactions) => {
-            if (err) {
-                return res.status(500).json({ error: 'Database error' });
-            }
-            res.json(transactions);
-        }
-    );
-});
-
-// Helper function to update portfolio
-function updatePortfolio(userId, symbol, quantity, price, type, callback) {
-    db.get(
-        'SELECT quantity, average_cost FROM portfolio WHERE user_id = ? AND symbol = ?',
-        [userId, symbol],
-        (err, row) => {
-            if (err) {
-                return callback(err);
-            }
-
-            if (!row) {
-                // New position
-                if (type === 'buy') {
-                    db.run(
-                        'INSERT INTO portfolio (user_id, symbol, quantity, average_cost) VALUES (?, ?, ?, ?)',
-                        [userId, symbol, quantity, price],
-                        (err) => {
-                            if (err) return callback(err);
-                            recordTransaction(userId, symbol, quantity, price, type, callback);
-                        }
-                    );
-                } else {
-                    return callback(new Error('Cannot sell stock that is not in portfolio'));
-                }
-            } else {
-                // Update existing position
-                const newQuantity = row.quantity + (type === 'buy' ? quantity : -quantity);
-                let newAverageCost = row.average_cost;
-                
-                if (type === 'buy' && newQuantity > 0) {
-                    // Update average cost only on buys
-                    const totalCost = (row.quantity * row.average_cost) + (quantity * price);
-                    newAverageCost = totalCost / newQuantity;
-                }
-
-                db.run(
-                    'UPDATE portfolio SET quantity = ?, average_cost = ? WHERE user_id = ? AND symbol = ?',
-                    [newQuantity, newAverageCost, userId, symbol],
-                    (err) => {
-                        if (err) return callback(err);
-                        recordTransaction(userId, symbol, quantity, price, type, callback);
-                    }
-                );
-            }
-        }
-    );
+    // Display empty state if no holdings
+    if (holdings.length === 0) {
+        portfolioList.innerHTML = '<div class="empty-portfolio">No holdings yet. Start trading!</div>';
+    } else {
+        // Generate HTML for each holding
+        portfolioList.innerHTML = holdings.map(holding => `
+            <div class="portfolio-item" onclick="viewStockInMarket('${holding.symbol}')">
+                <div class="stock-info">
+                    <h4>${holding.symbol}</h4>
+                    <div>${holding.quantity} shares</div>
+                </div>
+                <div class="stock-values">
+                    <div>
+                        <div>Current: ${holding.currentPrice.toFixed(2)}</div>
+                        <div>Avg: ${holding.averageCost.toFixed(2)}</div>
+                    </div>
+                    <div>
+                        <div>Value: ${holding.totalValue.toFixed(2)}</div>
+                        <div class="${holding.profit >= 0 ? 'positive' : 'negative'}">
+                            ${holding.profit >= 0 ? '+' : ''}${holding.profit.toFixed(2)}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
 }
 
-// Helper function to record transaction
-function recordTransaction(userId, symbol, quantity, price, type, callback) {
-    db.run(
-        'INSERT INTO transactions (user_id, symbol, quantity, price, type) VALUES (?, ?, ?, ?, ?)',
-        [userId, symbol, quantity, price, type],
-        callback
-    );
+/**
+ * Create the portfolio pie chart
+ * Visualizes portfolio allocation across different stocks
+ * @param {Array} holdings - Array of stock holdings data
+ */
+function createPortfolioPieChart(holdings) {
+    // Only proceed if we have holdings
+    if (!holdings || holdings.length === 0) {
+        const pieChartContainer = document.getElementById('portfolioPieChart');
+        if (pieChartContainer) {
+            pieChartContainer.innerHTML = '<div class="empty-chart">No holdings to display</div>';
+        }
+        return;
+    }
+    
+    // Since LightweightCharts doesn't have native pie charts, we'll create one using HTML Canvas
+    const pieChartContainer = document.getElementById('portfolioPieChart');
+    if (!pieChartContainer) return;
+    
+    // Clear existing content
+    pieChartContainer.innerHTML = '';
+    
+    // Create canvas element
+    const canvas = document.createElement('canvas');
+    canvas.width = pieChartContainer.clientWidth;
+    canvas.height = 400;
+    pieChartContainer.appendChild(canvas);
+    
+    const ctx = canvas.getContext('2d');
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const radius = Math.min(centerX, centerY) - 20; // Margin from edges
+    
+    // Calculate total portfolio value
+    const totalValue = holdings.reduce((sum, holding) => sum + holding.totalValue, 0);
+    
+    // Define vibrant colors for the pie slices
+    const colors = [
+        '#2962FF', '#FF6D00', '#2E7D32', '#6A1B9A', '#C62828',
+        '#00838F', '#EF6C00', '#4527A0', '#283593', '#00695C'
+    ];
+    
+    // Start drawing the pie chart
+    let startAngle = 0;
+    const holdingData = [];
+    
+    holdings.forEach((holding, index) => {
+        // Calculate slice size proportional to holding value
+        const percentage = holding.totalValue / totalValue;
+        const sliceAngle = percentage * 2 * Math.PI;
+        
+        // Draw pie slice
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle);
+        ctx.closePath();
+        
+        // Fill with appropriate color
+        const color = colors[index % colors.length];
+        ctx.fillStyle = color;
+        ctx.fill();
+        
+        // Save data for legend
+        holdingData.push({
+            symbol: holding.symbol,
+            value: holding.totalValue.toFixed(2),
+            percentage: (percentage * 100).toFixed(1),
+            color: color
+        });
+        
+        // Move to next slice
+        startAngle += sliceAngle;
+    });
+    
+    // Add center white circle for donut effect
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius * 0.6, 0, 2 * Math.PI);
+    ctx.fillStyle = 'white';
+    ctx.fill();
+    
+    // Add total value text in center
+    ctx.font = 'bold 24px Inter';
+    ctx.fillStyle = '#333';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${totalValue.toFixed(2)}`, centerX, centerY - 15);
+    
+    ctx.font = '16px Inter';
+    ctx.fillText('Total Value', centerX, centerY + 15);
+    
+    // Create legend with holdings breakdown
+    const legendContainer = document.getElementById('portfolioPieChartLegend');
+    if (legendContainer) {
+        legendContainer.innerHTML = holdingData.map(item => `
+            <div class="legend-item">
+                <span class="legend-color" style="background-color: ${item.color};"></span>
+                <span>${item.symbol}: ${item.value} (${item.percentage}%)</span>
+            </div>
+        `).join('');
+    }
 }
 
-module.exports = router;
+/**
+ * Redirect to market view for a specific stock
+ * Allows users to quickly view and trade a stock from their portfolio
+ * @param {string} symbol - Stock symbol to view
+ */
+function viewStockInMarket(symbol) {
+    // Change to market tab
+    const marketLink = document.querySelector('nav a[href="#market"]');
+    if (marketLink) {
+        // Update navigation UI
+        document.querySelectorAll('nav a').forEach(l => l.classList.remove('active'));
+        marketLink.classList.add('active');
+        
+        // Show market section and hide other sections
+        document.querySelectorAll('.content-section').forEach(s => {
+            s.style.display = 'none';
+        });
+        
+        const marketSection = document.getElementById('market-section');
+        if (marketSection) {
+            marketSection.style.display = 'block';
+        }
+        
+        // Update URL hash
+        window.location.hash = 'market';
+        
+        // Update market view with the selected symbol
+        // Short delay to ensure DOM updates complete
+        setTimeout(() => {
+            // Use existing market function if available
+            if (typeof selectMarketStock === 'function') {
+                selectMarketStock(symbol);
+            } else if (typeof updateMarketChartData === 'function') {
+                updateMarketChartData(symbol);
+            }
+        }, 100);
+    }
+}
+
+// Make functions globally available
+window.viewStockInMarket = viewStockInMarket;
