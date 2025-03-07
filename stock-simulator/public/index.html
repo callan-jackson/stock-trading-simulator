@@ -4,13 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Trading Simulator</title>
+    <!-- Lightweight Charts for stock visualization -->
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Inter font for modern UI typography -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Application styles -->
     <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
-    <!-- Auth Section -->
+    <!-- Authentication Section -->
+    <!-- This section is shown when user is not logged in -->
     <section id="auth-section" class="auth-container">
         <div class="auth-logo">
             Stock Sim
@@ -26,7 +31,7 @@
                 <p>Don't have an account? <a href="#" id="show-register">Register</a></p>
             </form>
 
-            <!-- Register Form -->
+            <!-- Register Form (hidden by default) -->
             <form id="register-form" class="auth-form" style="display: none;">
                 <h2>Create Account</h2>
                 <div id="register-error" class="error-message"></div>
@@ -39,21 +44,25 @@
         </div>
     </section>
 
-    <!-- Main App Content -->
+    <!-- Main Application Content -->
+    <!-- This section is shown after login -->
     <div id="main-content" style="display: none;">
+        <!-- Sidebar Navigation -->
         <div class="sidebar">
             <div class="logo">Stock Sim</div>
             <div id="user-welcome" class="user-welcome"></div>
             <nav>
-                <a href="#" class="active"><i class="fas fa-home"></i> Home</a>
-                <a href="#"><i class="fas fa-chart-line"></i> Market</a>
-                <a href="#"><i class="fas fa-wallet"></i> Portfolio</a>
-                <a href="#"><i class="fas fa-history"></i> History</a>
+                <a href="#home" class="active"><i class="fas fa-home"></i> Home</a>
+                <a href="#market"><i class="fas fa-chart-line"></i> Market</a>
+                <a href="#portfolio"><i class="fas fa-wallet"></i> Portfolio</a>
+                <a href="#history"><i class="fas fa-history"></i> History</a>
                 <a href="#" id="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                <a href="#" id="restart-tutorial" style="margin-top: auto;"><i class="fas fa-question-circle"></i> Tutorial</a>
             </nav>
         </div>
 
         <div class="main-content">
+            <!-- Header with Account Info -->
             <div class="header">
                 <div class="account-info">
                     <div class="cash-balance">
@@ -66,92 +75,257 @@
                 </div>
             </div>
 
-            <div class="metrics">
-                <div class="metric-card">
-                    <h3>Total Value</h3>
-                    <div class="value" id="totalValue">$0</div>
-                </div>
-                <div class="metric-card">
-                    <h3>Profit/Loss</h3>
-                    <div class="value" id="profitLoss">$0</div>
-                </div>
-            </div>
-
-            <div class="content-grid">
-                <div class="chart-container">
-                    <div class="chart-header">
-                        <h2><span id="currentSymbol">AAPL</span> Stock Prices</h2>
-                        <div class="chart-controls">
-                            <select id="timeRange">
-                                <option value="1d">1 Day</option>
-                                <option value="5d">5 Days</option>
-                                <option value="1mo">1 Month</option>
-                                <option value="3mo">3 Months</option>
-                                <option value="6mo" selected>6 Months</option>
-                                <option value="1y">1 Year</option>
-                            </select>
-                            <div class="indicator-toggles">
-                                <label><input type="checkbox" id="sma20" checked> SMA 20</label>
-                                <label><input type="checkbox" id="sma50" checked> SMA 50</label>
-                                <label><input type="checkbox" id="volume" checked> Volume</label>
+            <!-- Home Section -->
+            <section id="home-section" class="content-section">
+                <div class="welcome-container">
+                    <h1>Welcome to Stock Sim</h1>
+                    <div class="app-description">
+                        <h2>How It Works</h2>
+                        <div class="feature-grid">
+                            <!-- Feature cards explaining app functionality -->
+                            <div class="feature-card">
+                                <i class="fas fa-search"></i>
+                                <h3>Search Stocks</h3>
+                                <p>Find any publicly traded company by name or ticker symbol to view real-time price data.</p>
+                            </div>
+                            <div class="feature-card">
+                                <i class="fas fa-chart-line"></i>
+                                <h3>Analyze Markets</h3>
+                                <p>Review interactive price charts with technical indicators to inform your trading decisions.</p>
+                            </div>
+                            <div class="feature-card">
+                                <i class="fas fa-money-bill-wave"></i>
+                                <h3>Trade Risk-Free</h3>
+                                <p>Buy and sell stocks with $10,000 in virtual cash without risking real money.</p>
+                            </div>
+                            <div class="feature-card">
+                                <i class="fas fa-chart-pie"></i>
+                                <h3>Track Performance</h3>
+                                <p>Monitor your portfolio's performance with detailed statistics and transaction history.</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Quick start guide -->
+                        <div class="getting-started">
+                            <h2>Getting Started</h2>
+                            <ol>
+                                <li>Visit the <a href="#market">Market</a> page to search for stocks and analyze price movements</li>
+                                <li>When you're ready to trade, enter the stock symbol and quantity, then click Buy or Sell</li>
+                                <li>Track your holdings in the <a href="#portfolio">Portfolio</a> section</li>
+                                <li>View your transaction history and performance in the <a href="#history">History</a> section</li>
+                            </ol>
+                        </div>
+                        
+                        <!-- Portfolio summary on home page -->
+                        <div class="metrics-summary">
+                            <h2>Your Summary</h2>
+                            <div class="metrics">
+                                <div class="metric-card">
+                                    <h3>Total Value</h3>
+                                    <div class="value" id="homeTotalValue">$0</div>
+                                </div>
+                                <div class="metric-card">
+                                    <h3>Profit/Loss</h3>
+                                    <div class="value" id="homeProfitLoss">$0</div>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    <div id="stockChart"></div>
-                    <div id="chartLegend" class="chart-legend"></div>
+                </div>
+            </section>
+
+            <!-- Market Research Section -->
+            <section id="market-section" class="content-section" style="display: none;">
+                <h1>Market Research</h1>
+                
+                <!-- Stock search input -->
+                <div class="stock-search-container">
+                    <input type="text" id="marketStockSearch" class="stock-search-input" placeholder="Search stocks...">
+                    <div id="marketSearchResults" class="search-results"></div>
+                </div>
+                
+                <div class="content-grid">
+                    <!-- Stock chart container -->
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <h2><span id="marketCurrentSymbol">AAPL</span> Stock Prices</h2>
+                            <div class="chart-controls">
+                                <!-- Time range selector -->
+                                <select id="marketTimeRange">
+                                    <option value="1d">1 Day</option>
+                                    <option value="5d">5 Days</option>
+                                    <option value="1mo">1 Month</option>
+                                    <option value="3mo">3 Months</option>
+                                    <option value="6mo" selected>6 Months</option>
+                                    <option value="1y">1 Year</option>
+                                </select>
+                                <!-- Technical indicator toggles -->
+                                <div class="indicator-toggles">
+                                    <label><input type="checkbox" id="marketSma20" checked> SMA 20</label>
+                                    <label><input type="checkbox" id="marketSma50" checked> SMA 50</label>
+                                    <label><input type="checkbox" id="marketVolume" checked> Volume</label>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Chart will be injected here by JS -->
+                        <div id="marketStockChart"></div>
+                        <div id="marketChartLegend" class="chart-legend"></div>
+                    </div>
+
+                    <!-- Trading interface and stock info -->
+                    <div class="trade-section">
+                        <div class="trade-box">
+                            <h3>Quick Trade</h3>
+                            <input type="text" id="marketSymbol" placeholder="Symbol (e.g., AAPL)" required>
+                            <input type="number" id="marketQuantity" placeholder="Quantity" required min="1">
+                            <div class="current-price">
+                                Current Price: $<span id="marketCurrentPrice">0.00</span>
+                            </div>
+                            <div class="total-cost">
+                                Total Cost: $<span id="marketTotalCost">0.00</span>
+                            </div>
+                            <div class="button-group">
+                                <button id="marketBuyBtn" class="buy-btn">Buy</button>
+                                <button id="marketSellBtn" class="sell-btn">Sell</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Company information box -->
+                        <div class="stock-info-box">
+                            <h3>Company Information</h3>
+                            <div id="stockInfoContent">
+                                <p>Select a stock to view company information.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Portfolio Section -->
+            <section id="portfolio-section" class="content-section" style="display: none;">
+                <h1>Your Portfolio</h1>
+                
+                <!-- Portfolio metrics summary -->
+                <div class="metrics">
+                    <div class="metric-card">
+                        <h3>Total Value</h3>
+                        <div class="value" id="totalValue">$0</div>
+                    </div>
+                    <div class="metric-card">
+                        <h3>Profit/Loss</h3>
+                        <div class="value" id="profitLoss">$0</div>
+                    </div>
+                    <div class="metric-card">
+                        <h3>Cash Balance</h3>
+                        <div class="value">$<span id="portfolioCashBalance">0</span></div>
+                    </div>
                 </div>
 
-                <div class="trade-section">
-                    <div class="stock-search-container">
-                        <input type="text" id="stockSearch" class="stock-search-input" placeholder="Search stocks...">
-                        <div id="searchResults" class="search-results"></div>
+                <div class="content-grid">
+                    <!-- Portfolio pie chart -->
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <h2>Portfolio Composition</h2>
+                        </div>
+                        <div id="portfolioPieChart" class="portfolio-pie-chart"></div>
+                        <div id="portfolioPieChartLegend" class="chart-legend"></div>
                     </div>
 
-                    <div class="trade-box">
-                        <h3>Trade Stocks</h3>
-                        <input type="text" id="symbol" placeholder="Symbol (e.g., AAPL)" required>
-                        <input type="number" id="quantity" placeholder="Quantity" required min="1">
-                        <div class="current-price">
-                            Current Price: $<span id="currentPrice">0.00</span>
+                    <!-- Portfolio holdings list -->
+                    <div class="portfolio-list-container">
+                        <div class="portfolio-list">
+                            <h3>Your Holdings</h3>
+                            <div id="portfolioList"></div>
                         </div>
-                        <div class="total-cost">
-                            Total Cost: $<span id="totalCost">0.00</span>
-                        </div>
-                        <div class="button-group">
-                            <button id="buyBtn" class="buy-btn">Buy</button>
-                            <button id="sellBtn" class="sell-btn">Sell</button>
-                        </div>
-                    </div>
-
-                    <div class="portfolio-list">
-                        <h3>Your Holdings</h3>
-                        <div id="portfolioList"></div>
                     </div>
                 </div>
-            </div>
 
-            <div class="transaction-history">
-                <h3>Recent Transactions</h3>
-                <div class="transaction-list">
-                    <div class="transaction-item transaction-header">
-                        <div>Date</div>
-                        <div>Symbol</div>
-                        <div>Type</div>
-                        <div>Quantity</div>
-                        <div>Price</div>
-                    </div>
-                    <div id="transactionHistory">
-                        <!-- Transaction items will be populated here by JavaScript -->
+                <!-- Recent transactions -->
+                <div class="transaction-history">
+                    <h3>Recent Transactions</h3>
+                    <div class="transaction-list">
+                        <div class="transaction-item transaction-header">
+                            <div>Date</div>
+                            <div>Symbol</div>
+                            <div>Type</div>
+                            <div>Quantity</div>
+                            <div>Price</div>
+                        </div>
+                        <div id="transactionHistory">
+                            <!-- Transaction items will be populated here by JavaScript -->
+                        </div>
                     </div>
                 </div>
-            </div>
+            </section>
+
+            <!-- Transaction History Section -->
+            <section id="history-section" class="content-section" style="display: none;">
+                <h1>Transaction History</h1>
+                
+                <!-- History filters -->
+                <div class="history-filters">
+                    <div class="filter-group">
+                        <label for="historyFilterType">Type:</label>
+                        <select id="historyFilterType">
+                            <option value="all">All</option>
+                            <option value="buy">Buy</option>
+                            <option value="sell">Sell</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="historyDateRange">Period:</label>
+                        <select id="historyDateRange">
+                            <option value="7">Last 7 days</option>
+                            <option value="30" selected>Last 30 days</option>
+                            <option value="90">Last 90 days</option>
+                            <option value="365">Last year</option>
+                            <option value="all">All time</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- History charts -->
+                <div class="history-charts">
+                    <div class="chart-container">
+                        <h3>Trading Activity Over Time</h3>
+                        <div id="activityChart" class="history-chart"></div>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <h3>Portfolio Composition</h3>
+                        <div id="compositionChart" class="history-chart"></div>
+                    </div>
+                </div>
+                
+                <!-- Detailed transaction history -->
+                <div class="transaction-history-full">
+                    <h3>Detailed Transaction History</h3>
+                    <div class="transaction-list">
+                        <div class="transaction-item transaction-header">
+                            <div>Date</div>
+                            <div>Symbol</div>
+                            <div>Type</div>
+                            <div>Quantity</div>
+                            <div>Price</div>
+                            <div>Total</div>
+                        </div>
+                        <div id="fullTransactionHistory">
+                            <!-- Full transaction history will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
         </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="/js/auth.js"></script>
-    <script src="/js/charts.js"></script>
-    <script src="/js/portfolio.js"></script>
-    <script src="/js/app.js"></script>
+    <!-- JavaScript files -->
+    <!-- Each file handles a specific functionality module -->
+    <script src="/js/auth.js"></script>      <!-- Authentication handling -->
+    <script src="/js/charts.js"></script>    <!-- Chart rendering and updating -->
+    <script src="/js/history.js"></script>   <!-- Transaction history visualization -->
+    <script src="/js/market.js"></script>    <!-- Market research and trading -->
+    <script src="/js/portfolio.js"></script> <!-- Portfolio management and display -->
+    <script src="/js/tutorial.js"></script>  <!-- Interactive onboarding tutorial -->
+    <script src="/js/app.js"></script>       <!-- Main application controller -->
 </body>
 </html>
